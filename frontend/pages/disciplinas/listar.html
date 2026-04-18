@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disciplinas</title>
+    <link rel="stylesheet" href="../../css/style.css">
+    <link rel="stylesheet" href="disciplinas.css">
+</head>
+<body>
+    <header>
+    <a href="../../index.html" class="btn-voltar">← Voltar</a>
+    <h1>Disciplinas</h1>
+</header>
+
+<main class="list-container">
+
+    <h2>Lista de Disciplinas</h2>
+
+    <!-- Barra de pesquisa -->
+    <div class="search-container">
+        <input 
+            type="text"
+            id="pesquisa"
+            placeholder="Pesquisar por nome, professor ou período..."
+            oninput="filtrar()">
+    </div>
+
+    <!-- Tabela -->
+    <table>
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Professor</th>
+                <th>Período</th>
+                <th>Pré-requisitos</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+
+        <tbody id="tabela"></tbody>
+    </table>
+
+    <!-- Botão no final -->
+    <div class="list-footer">
+        <a href="cadastrar.html">
+            <button class="btn-novo">+ Nova Disciplina</button>
+        </a>
+    </div>
+
+</main>
+    <!-- Pop-up de confirmação de exclusão -->
+    <div id="popup-excluir" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon">⚠</span>
+            <p>Deseja excluir esta disciplina?</p>
+            <div class="popup-actions">
+                <button class="btn-cancelar" onclick="fecharExcluir()">Cancelar</button>
+                <button class="btn-excluir" onclick="confirmarExclusao()">Excluir</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pop-up bloqueio de exclusão -->
+    <div id="popup-bloqueio" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon" style="color:#e05019">🚫</span>
+            <p>Esta disciplina possui alunos matriculados e não pode ser excluída.</p>
+            <button class="btn-ok" onclick="document.getElementById('popup-bloqueio').classList.add('hidden')">OK</button>
+        </div>
+    </div>
+
+    <!-- Pop-up de sucesso -->
+    <div id="popup-sucesso" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon">✓</span>
+            <p id="msg-sucesso"></p>
+        </div>
+    </div>
+
+    <script src="../../js/config.js"></script>
+    <script src="../../js/services/disciplina.service.js"></script>
+    <script>
+        let todasDisciplinas = [];
+        let idParaExcluir = null;
+
+        async function carregarDisciplinas() {
+            todasDisciplinas = await DisciplinaService.listar();
+            renderizar(todasDisciplinas);
+        }
+
+        function renderizar(disciplinas) {
+            const tabela = document.getElementById('tabela');
+            tabela.innerHTML = '';
+            disciplinas.forEach(d => {
+                const preReqs = d.preRequisitos?.length > 0
+                    ? d.preRequisitos.map(p => p.nome).join(', ')
+                    : '—';
+                tabela.innerHTML += `
+                    <tr>
+                        <td>${d.nome}</td>
+                        <td>${d.professor?.nome || '—'}</td>
+                        <td>${d.periodo?.numero}º Semestre</td>
+                        <td>${preReqs}</td>
+                        <td class="acoes">
+                            <button class="btn-excluir" onclick="abrirExcluir(${d.id})">Excluir</button>
+                        </td>
+                    </tr>`;
+            });
+        }
+
+        function filtrar() {
+            const termo = document.getElementById('pesquisa').value.toLowerCase();
+            const filtrados = todasDisciplinas.filter(d =>
+                d.nome.toLowerCase().includes(termo) ||
+                d.professor?.nome.toLowerCase().includes(termo) ||
+                String(d.periodo?.numero).includes(termo)
+            );
+            renderizar(filtrados);
+        }
+
+        async function abrirExcluir(id) {
+            const temAtivas = await fetch(`${API.MATRICULA}/matriculas/disciplina/${id}/ativas`).then(r => r.json());
+            if (temAtivas) {
+                document.getElementById('popup-bloqueio').classList.remove('hidden');
+                return;
+            }
+            idParaExcluir = id;
+            document.getElementById('popup-excluir').classList.remove('hidden');
+        }
+
+        function fecharExcluir() {
+            document.getElementById('popup-excluir').classList.add('hidden');
+        }
+
+        async function confirmarExclusao() {
+            await DisciplinaService.deletar(idParaExcluir);
+            fecharExcluir();
+            mostrarSucesso('Disciplina excluída com sucesso!');
+            carregarDisciplinas();
+        }
+
+        function mostrarSucesso(msg) {
+            document.getElementById('msg-sucesso').textContent = msg;
+            document.getElementById('popup-sucesso').classList.remove('hidden');
+            setTimeout(() => document.getElementById('popup-sucesso').classList.add('hidden'), 1500);
+        }
+
+        carregarDisciplinas();
+    </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+com\escola\matriculaservice\client\CadastroClient.class
+com\escola\matriculaservice\handler\GlobalExceptionHandler.class
+com\escola\matriculaservice\controller\MatriculaController.class
+com\escola\matriculaservice\repository\MatriculaRepository.class
+com\escola\matriculaservice\AppConfig.class
+com\escola\matriculaservice\MatriculaServiceApplication.class
+com\escola\matriculaservice\model\Matricula$StatusMatricula.class
+com\escola\matriculaservice\model\Matricula.class
+com\escola\matriculaservice\CorsConfig.class

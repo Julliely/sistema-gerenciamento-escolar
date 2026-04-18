@@ -1,0 +1,11 @@
+com\escola\disciplinaservice\model\Periodo.class
+com\escola\disciplinaservice\AppConfig.class
+com\escola\disciplinaservice\CorsConfig.class
+com\escola\disciplinaservice\DisciplinaServiceApplication.class
+com\escola\disciplinaservice\handler\GlobalExceptionHandler.class
+com\escola\disciplinaservice\controller\PeriodoController.class
+com\escola\disciplinaservice\repository\PeriodoRepository.class
+com\escola\disciplinaservice\repository\DisciplinaRepository.class
+com\escola\disciplinaservice\client\CadastroClient.class
+com\escola\disciplinaservice\model\Disciplina.class
+com\escola\disciplinaservice\controller\DisciplinaController.class

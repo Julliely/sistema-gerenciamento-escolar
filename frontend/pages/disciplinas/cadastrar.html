@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastrar Disciplina</title>
+    <link rel="stylesheet" href="../../css/style.css">
+    <link rel="stylesheet" href="disciplinas.css">
+</head>
+<body>
+    <header>
+        <a href="../../index.html" class="btn-voltar">← Voltar</a>
+        <h1>Disciplinas</h1>
+    </header>
+
+    <main class="form-container">
+        <form id="formDisciplina">
+            <h2>Cadastrar Disciplina</h2>
+
+            <div class="form-group">
+                <label for="nome">Nome</label>
+                <input type="text" id="nome" placeholder="Nome da disciplina" required>
+            </div>
+
+            <div class="form-group">
+                <label for="descricao">Descrição</label>
+                <input type="text" id="descricao" placeholder="Descrição da disciplina" required>
+            </div>
+
+            <div class="form-group">
+                <label for="professor">Professor</label>
+                <select id="professor" required>
+                    <option value="">Selecione um professor</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="periodo">Período</label>
+                <select id="periodo" required>
+                    <option value="">Selecione um período</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Pré-requisitos</label>
+                <div class="prereq-opcao">
+                    <label class="radio-label">
+                        <input type="radio" name="temPreReq" value="nao" checked onchange="togglePreReq()"> Sem pré-requisito
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="temPreReq" value="sim" onchange="togglePreReq()"> Com pré-requisito
+                    </label>
+                </div>
+                <div id="prereq-lista" class="prereq-lista hidden"></div>
+            </div>
+
+            <button type="submit" class="btn-submit">Cadastrar</button>
+        </form>
+    </main>
+
+    <!-- Pop-up de sucesso -->
+    <div id="popup" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon">✓</span>
+            <p>Disciplina cadastrada com sucesso!</p>
+        </div>
+    </div>
+
+    <script src="../../js/config.js"></script>
+    <script src="../../js/services/professor.service.js"></script>
+    <script src="../../js/services/periodo.service.js"></script>
+    <script src="../../js/services/disciplina.service.js"></script>
+    <script>
+        async function init() {
+            const professores = await ProfessorService.listar();
+            const selectProf = document.getElementById('professor');
+            professores.forEach(p => {
+                selectProf.innerHTML += `<option value="${p.id}">${p.nome} — ${p.especialidade}</option>`;
+            });
+
+            const periodos = await PeriodoService.listar();
+            const selectPer = document.getElementById('periodo');
+            periodos.sort((a, b) => a.numero - b.numero).forEach(p => {
+                selectPer.innerHTML += `<option value="${p.id}">${p.numero}º Semestre</option>`;
+            });
+
+            const disciplinas = await DisciplinaService.listar();
+            const lista = document.getElementById('prereq-lista');
+            disciplinas.forEach(d => {
+                lista.innerHTML += `
+                    <label class="checkbox-label">
+                        <input type="checkbox" value="${d.id}" class="prereq-check">
+                        <span>${d.nome} (${d.periodo?.numero}º Semestre)</span>
+                    </label>`;
+            });
+        }
+
+        function togglePreReq() {
+            const sim = document.querySelector('input[name="temPreReq"]:checked').value === 'sim';
+            document.getElementById('prereq-lista').classList.toggle('hidden', !sim);
+        }
+
+        document.getElementById('formDisciplina').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const temPreReq = document.querySelector('input[name="temPreReq"]:checked').value === 'sim';
+            const preRequisitos = temPreReq
+                ? [...document.querySelectorAll('.prereq-check:checked')].map(c => ({ id: parseInt(c.value) }))
+                : [];
+
+            const periodoId = parseInt(document.getElementById('periodo').value);
+            const professorId = parseInt(document.getElementById('professor').value);
+
+            const disciplina = {
+                nome: document.getElementById('nome').value,
+                descricao: document.getElementById('descricao').value,
+                professorId: professorId,
+                periodo: { id: periodoId }
+            };
+
+            await DisciplinaService.cadastrar(disciplina);
+
+            document.getElementById('popup').classList.remove('hidden');
+            setTimeout(() => window.location.href = 'listar.html', 1500);
+        });
+
+        init();
+    </script>
+</body>
+</html>

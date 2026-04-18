@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matricular Aluno</title>
+    <link rel="stylesheet" href="../../css/style.css">
+    <link rel="stylesheet" href="matriculas.css">
+</head>
+<body>
+    <header>
+        <a href="../../index.html" class="btn-voltar">← Voltar</a>
+        <h1>Matrícula</h1>
+    </header>
+
+    <main class="matricula-container">
+        <div class="card-matricula">
+
+            <h2>Matricular Aluno</h2>
+
+            <!-- BARRA DE PESQUISA -->
+            <div class="search-aluno">
+                <label>Selecionar Aluno</label>
+                <input type="text" id="inputAluno" placeholder="Digite o nome do aluno..." oninput="buscarAluno()" autocomplete="off">
+                <ul id="sugestoes" class="sugestoes hidden"></ul>
+            </div>
+
+            <!-- ALUNO SELECIONADO -->
+            <div id="aluno-selecionado" class="aluno-selecionado hidden">
+                <span id="aluno-nome"></span>
+                <button onclick="limparAluno()">✕</button>
+            </div>
+
+            <div id="btn-finalizar-container" class="hidden">
+                <button class="btn-finalizar" onclick="abrirFinalizarSemestre()">Finalizar Semestre</button>
+            </div>
+
+            <!-- DISCIPLINAS -->
+            <div id="disciplinas-container" class="hidden">
+                <div id="periodos-lista"></div>
+                <div class="matricula-footer">
+                    <button id="btn-confirmar" class="btn-matricular" onclick="matricular()" style="display:none">Confirmar Matrícula</button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Pop-up de sucesso -->
+    <div id="popup-sucesso" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon">✓</span>
+            <p id="msg-sucesso">Matrícula realizada com sucesso!</p>
+        </div>
+    </div>
+
+    <!-- Pop-up de aviso -->
+    <div id="popup-aviso" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon aviso">⚠</span>
+            <p id="msg-aviso"></p>
+            <button class="btn-ok" onclick="fecharAviso()">OK</button>
+        </div>
+    </div>
+
+    <!-- Pop-up finalizar semestre -->
+    <div id="popup-finalizar" class="popup hidden">
+        <div class="popup-box popup-finalizar-box">
+            <h3>Finalizar Semestre</h3>
+            <p class="popup-sub">Marque as disciplinas em que o aluno foi <strong>aprovado</strong>:</p>
+            <div id="lista-finalizar"></div>
+            <div class="popup-actions">
+                <button class="btn-cancelar" onclick="fecharFinalizar()">Voltar</button>
+                <button class="btn-salvar" onclick="confirmarFinalizar()">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../js/config.js"></script>
+    <script src="../../js/services/aluno.service.js"></script>
+    <script src="../../js/services/disciplina.service.js"></script>
+    <script src="../../js/services/matricula.service.js"></script>
+    <script>
+        let todosAlunos = [];
+        let alunoSelecionado = null;
+        let todasDisciplinas = [];
+        let matriculasAluno = [];
+
+        async function init() {
+            todosAlunos = await AlunoService.listar();
+            todasDisciplinas = await DisciplinaService.listar();
+        }
+
+        function buscarAluno() {
+            const termo = document.getElementById('inputAluno').value.toLowerCase();
+            const sugestoes = document.getElementById('sugestoes');
+
+            if (termo.length < 2) { sugestoes.classList.add('hidden'); return; }
+
+            const filtrados = todosAlunos.filter(a => a.nome.toLowerCase().includes(termo));
+            sugestoes.innerHTML = '';
+
+            if (filtrados.length === 0) {
+                sugestoes.innerHTML = '<li class="sem-resultado">Nenhum aluno encontrado</li>';
+            } else {
+                filtrados.forEach(a => {
+                    const li = document.createElement('li');
+                    li.textContent = a.nome;
+                    li.onclick = () => selecionarAluno(a);
+                    sugestoes.appendChild(li);
+                });
+            }
+            sugestoes.classList.remove('hidden');
+        }
+
+        async function selecionarAluno(aluno) {
+            alunoSelecionado = aluno;
+            document.getElementById('inputAluno').value = '';
+            document.getElementById('sugestoes').classList.add('hidden');
+            document.getElementById('aluno-nome').textContent = aluno.nome;
+            document.getElementById('aluno-selecionado').classList.remove('hidden');
+            matriculasAluno = await MatriculaService.listarPorAluno(aluno.id);
+            document.getElementById('btn-finalizar-container').classList.remove('hidden');
+            renderizarDisciplinas();
+        }
+
+        function limparAluno() {
+            alunoSelecionado = null;
+            matriculasAluno = [];
+            document.getElementById('aluno-selecionado').classList.add('hidden');
+            document.getElementById('btn-finalizar-container').classList.add('hidden');
+            document.getElementById('disciplinas-container').classList.add('hidden');
+            document.getElementById('inputAluno').value = '';
+        }
+
+        function renderizarDisciplinas() {
+            const container = document.getElementById('periodos-lista');
+            container.innerHTML = '';
+
+            const periodos = {};
+            todasDisciplinas.forEach(d => {
+                const num = d.periodo?.numero || 0;
+                if (!periodos[num]) periodos[num] = [];
+                periodos[num].push(d);
+            });
+
+            const aprovadas = new Set(matriculasAluno.filter(m => m.status === 'APROVADO').map(m => m.disciplinaId));
+            const ativas = new Set(matriculasAluno.filter(m => m.status === 'ATIVA').map(m => m.disciplinaId));
+
+            Object.keys(periodos).sort((a, b) => a - b).forEach(num => {
+                const bloco = document.createElement('div');
+                bloco.className = 'periodo-bloco';
+                bloco.innerHTML = `<h3>${num}º Semestre</h3>`;
+
+                periodos[num].forEach(d => {
+                    const jaAprovada = aprovadas.has(d.id);
+                    const jaAtiva = ativas.has(d.id);
+                    const preReqFaltando = (d.preRequisitos || []).filter(pr => !aprovadas.has(pr.id));
+                    const bloqueada = preReqFaltando.length > 0;
+                    const disabled = jaAprovada || jaAtiva || bloqueada;
+
+                    let tooltip = '';
+                    if (jaAprovada) tooltip = 'Já concluída';
+                    else if (jaAtiva) tooltip = 'Já matriculado';
+                    else if (bloqueada) tooltip = `Pré-requisito(s) pendente(s): ${preReqFaltando.map(p => p.nome).join(', ')}`;
+
+                    const item = document.createElement('div');
+                    item.className = 'disciplina-item';
+                    item.innerHTML = `
+                        <label class="checkbox-label ${disabled ? 'desabilitado' : ''}">
+                            <input type="checkbox" value="${d.id}"
+                                ${jaAprovada ? 'checked' : ''}
+                                ${disabled ? 'disabled' : ''}
+                                class="disciplina-check">
+                            <span class="disciplina-nome">${d.nome}</span>
+                            ${tooltip ? `<span class="tooltip">${tooltip}</span>` : ''}
+                        </label>`;
+                    bloco.appendChild(item);
+                });
+
+                container.appendChild(bloco);
+            });
+
+            document.getElementById('disciplinas-container').classList.remove('hidden');
+
+            const temAtivas = matriculasAluno.some(m => m.status === 'ATIVA');
+            document.getElementById('btn-confirmar').style.display = temAtivas ? 'none' : 'block';
+        }
+
+        async function matricular() {
+            const checks = document.querySelectorAll('.disciplina-check:checked:not(:disabled)');
+            if (checks.length === 0) {
+                document.getElementById('msg-aviso').textContent = 'Selecione ao menos uma disciplina.';
+                document.getElementById('popup-aviso').classList.remove('hidden');
+                return;
+            }
+            for (const check of checks) {
+                await MatriculaService.matricular({ alunoId: alunoSelecionado.id, disciplinaId: parseInt(check.value) });
+            }
+            mostrarSucesso('Matrícula realizada com sucesso!');
+            setTimeout(async () => {
+                document.getElementById('popup-sucesso').classList.add('hidden');
+                matriculasAluno = await MatriculaService.listarPorAluno(alunoSelecionado.id);
+                renderizarDisciplinas();
+            }, 1500);
+        }
+
+        function abrirFinalizarSemestre() {
+            const ativas = matriculasAluno.filter(m => m.status === 'ATIVA');
+            if (ativas.length === 0) {
+                document.getElementById('msg-aviso').textContent = 'O aluno não possui disciplinas ativas no momento.';
+                document.getElementById('popup-aviso').classList.remove('hidden');
+                return;
+            }
+
+            const lista = document.getElementById('lista-finalizar');
+            lista.innerHTML = '';
+
+            ativas.forEach(m => {
+                const disciplina = todasDisciplinas.find(d => d.id === m.disciplinaId);
+                if (!disciplina) return;
+                lista.innerHTML += `
+                    <label class="checkbox-label">
+                        <input type="checkbox" value="${m.id}" class="finalizar-check" checked>
+                        <span class="disciplina-nome">${disciplina.nome}</span>
+                    </label>`;
+            });
+
+            document.getElementById('popup-finalizar').classList.remove('hidden');
+        }
+
+        function fecharFinalizar() {
+            document.getElementById('popup-finalizar').classList.add('hidden');
+        }
+
+        async function confirmarFinalizar() {
+            const checks = document.querySelectorAll('.finalizar-check:checked');
+            const disciplinaIds = Array.from(checks).map(check => {
+                const matricula = matriculasAluno.find(m => m.id == check.value);
+                return matricula.disciplinaId;
+            });
+
+            if (disciplinaIds.length === 0) {
+                document.getElementById('msg-aviso').textContent = 'Selecione pelo menos uma disciplina aprovada.';
+                document.getElementById('popup-aviso').classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await MatriculaService.finalizarSemestre(alunoSelecionado.id, disciplinaIds);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData || 'Erro ao finalizar semestre');
+                }
+                fecharFinalizar();
+                mostrarSucesso('Semestre finalizado com sucesso!');
+                setTimeout(async () => {
+                    document.getElementById('popup-sucesso').classList.add('hidden');
+                    matriculasAluno = await MatriculaService.listarPorAluno(alunoSelecionado.id);
+                    renderizarDisciplinas();
+                }, 1500);
+            } catch (error) {
+                document.getElementById('msg-aviso').textContent = error.message || 'Erro ao finalizar semestre. Tente novamente.';
+                document.getElementById('popup-aviso').classList.remove('hidden');
+            }
+        }
+
+        function mostrarSucesso(msg) {
+            document.getElementById('msg-sucesso').textContent = msg;
+            document.getElementById('popup-sucesso').classList.remove('hidden');
+        }
+
+        function fecharAviso() {
+            document.getElementById('popup-aviso').classList.add('hidden');
+        }
+
+        init();
+    </script>
+</body>
+</html>

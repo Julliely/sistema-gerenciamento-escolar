@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alunos</title>
+    <link rel="stylesheet" href="../../css/style.css">
+    <link rel="stylesheet" href="alunos.css">
+</head>
+<body>
+    <header>
+        <a href="../../index.html" class="btn-voltar">← Voltar</a>
+        <h1>Alunos</h1>
+    </header>
+
+    <main class="list-container">
+
+    <h2>Lista de Alunos</h2>
+
+    <div class="search-container">
+        <input 
+            type="text" 
+            id="pesquisa" 
+            placeholder="Pesquisar por nome ou email..." 
+            oninput="filtrar()">
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>E-mail</th>
+                <th>CPF</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+
+        <tbody id="tabela"></tbody>
+    </table>
+
+    <div class="list-footer">
+        <a href="cadastrar.html">
+            <button class="btn-novo">+ Novo Aluno</button>
+        </a>
+    </div>
+
+</main>
+
+    <!-- Pop-up de edição -->
+    <div id="popup-editar" class="popup hidden">
+        <div class="popup-box">
+            <h3>Editar Aluno</h3>
+            <input type="hidden" id="edit-id">
+            <div class="form-group">
+                <label>Nome</label>
+                <input type="text" id="edit-nome">
+            </div>
+            <div class="form-group">
+                <label>E-mail</label>
+                <input type="email" id="edit-email">
+            </div>
+            <div class="form-group">
+                <label>CPF</label>
+                <input type="text" id="edit-cpf">
+            </div>
+            <div class="popup-actions">
+                <button class="btn-cancelar" onclick="fecharEditar()">Cancelar</button>
+                <button class="btn-salvar" onclick="salvarEdicao()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pop-up de confirmação de exclusão -->
+    <div id="popup-excluir" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon">⚠</span>
+            <p>Deseja excluir este aluno?</p>
+            <div class="popup-actions">
+                <button class="btn-cancelar" onclick="fecharExcluir()">Cancelar</button>
+                <button class="btn-excluir" onclick="confirmarExclusao()">Excluir</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pop-up de sucesso -->
+    <div id="popup-sucesso" class="popup hidden">
+        <div class="popup-box">
+            <span class="popup-icon">✓</span>
+            <p id="msg-sucesso"></p>
+        </div>
+    </div>
+
+    <script src="../../js/config.js"></script>
+    <script src="../../js/services/aluno.service.js"></script>
+    <script>
+        let todosOsAlunos = [];
+        let idParaExcluir = null;
+
+        async function carregarAlunos() {
+            todosOsAlunos = await AlunoService.listar();
+            renderizar(todosOsAlunos);
+        }
+
+        function renderizar(alunos) {
+            const tabela = document.getElementById('tabela');
+            tabela.innerHTML = '';
+            alunos.forEach(a => {
+                tabela.innerHTML += `
+                    <tr>
+                        <td>${a.nome}</td>
+                        <td>${a.email}</td>
+                        <td>${a.cpf}</td>
+                        <td class="acoes">
+                            <button class="btn-editar" onclick="abrirEditar(${a.id}, '${a.nome}', '${a.email}', '${a.cpf}')">Editar</button>
+                            <button class="btn-excluir" onclick="abrirExcluir(${a.id})">Excluir</button>
+                        </td>
+                    </tr>`;
+            });
+        }
+
+        function filtrar() {
+            const termo = document.getElementById('pesquisa').value.toLowerCase();
+            const filtrados = todosOsAlunos.filter(a =>
+                a.nome.toLowerCase().includes(termo) ||
+                a.email.toLowerCase().includes(termo)
+            );
+            renderizar(filtrados);
+        }
+
+        function abrirEditar(id, nome, email, cpf) {
+            document.getElementById('edit-id').value = id;
+            document.getElementById('edit-nome').value = nome;
+            document.getElementById('edit-email').value = email;
+            document.getElementById('edit-cpf').value = cpf;
+            document.getElementById('popup-editar').classList.remove('hidden');
+        }
+
+        function fecharEditar() {
+            document.getElementById('popup-editar').classList.add('hidden');
+        }
+
+        async function salvarEdicao() {
+            const id = document.getElementById('edit-id').value;
+            const aluno = {
+                nome: document.getElementById('edit-nome').value,
+                email: document.getElementById('edit-email').value,
+                cpf: document.getElementById('edit-cpf').value
+            };
+            await AlunoService.atualizar(id, aluno);
+            fecharEditar();
+            mostrarSucesso('Aluno atualizado com sucesso!');
+            carregarAlunos();
+        }
+
+        function abrirExcluir(id) {
+            idParaExcluir = id;
+            document.getElementById('popup-excluir').classList.remove('hidden');
+        }
+
+        function fecharExcluir() {
+            document.getElementById('popup-excluir').classList.add('hidden');
+        }
+
+        async function confirmarExclusao() {
+            await AlunoService.deletar(idParaExcluir);
+            fecharExcluir();
+            mostrarSucesso('Aluno excluído com sucesso!');
+            carregarAlunos();
+        }
+
+        function mostrarSucesso(msg) {
+            document.getElementById('msg-sucesso').textContent = msg;
+            document.getElementById('popup-sucesso').classList.remove('hidden');
+            setTimeout(() => document.getElementById('popup-sucesso').classList.add('hidden'), 1500);
+        }
+
+        carregarAlunos();
+    </script>
+</body>
+</html>
