@@ -1,0 +1,287 @@
+##############################################
+# ConfigMap - Datasource do Grafana
+# Conecta automaticamente ao Prometheus
+##############################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-svc:9090
+        isDefault: true
+        editable: true
+
+---
+
+##############################################
+# ConfigMap - Provisioning de dashboards
+##############################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: 'Sistema Escolar'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
+
+---
+
+##############################################
+# ConfigMap - Dashboard JSON: Visao Geral
+# Dashboard pre-configurado com paineis para
+# monitorar todos os microsservicos
+##############################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  sistema-escolar.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "Servicos Online",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "count(up{job=~\".*-service\"} == 1)",
+              "legendFormat": "Online"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 2 },
+                  { "color": "green", "value": 4 }
+                ]
+              },
+              "unit": "none"
+            }
+          }
+        },
+        {
+          "title": "Status dos Servicos (UP/DOWN)",
+          "type": "table",
+          "gridPos": { "h": 4, "w": 18, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "up{job=~\".*-service\"}",
+              "legendFormat": "{{ job }}",
+              "format": "table",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "title": "Requisicoes HTTP por Segundo (por servico)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count[1m])) by (job)",
+              "legendFormat": "{{ job }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "fillOpacity": 15 },
+              "unit": "reqps"
+            }
+          }
+        },
+        {
+          "title": "Latencia P95 por Servico (segundos)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, job))",
+              "legendFormat": "{{ job }} P95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "fillOpacity": 10 },
+              "unit": "s",
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 2 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Erros HTTP 4xx e 5xx por Servico",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count{status=~\"4..\"}[5m])) by (job)",
+              "legendFormat": "{{ job }} - 4xx"
+            },
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[5m])) by (job)",
+              "legendFormat": "{{ job }} - 5xx"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "bars", "fillOpacity": 50 },
+              "unit": "reqps"
+            }
+          }
+        },
+        {
+          "title": "Circuit Breaker - Estado",
+          "type": "stat",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "resilience4j_circuitbreaker_state",
+              "legendFormat": "{{ name }} ({{ job }})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "CLOSED (OK)", "color": "green" } } },
+                { "type": "value", "options": { "1": { "text": "OPEN (FALHA)", "color": "red" } } },
+                { "type": "value", "options": { "2": { "text": "HALF-OPEN", "color": "yellow" } } }
+              ]
+            }
+          }
+        },
+        {
+          "title": "JVM Heap Memory Usado (bytes)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jvm_memory_used_bytes{area=\"heap\"}",
+              "legendFormat": "{{ job }} - {{ id }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "fillOpacity": 20 },
+              "unit": "bytes"
+            }
+          }
+        },
+        {
+          "title": "JVM Threads Ativas",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jvm_threads_live_threads",
+              "legendFormat": "{{ job }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "fillOpacity": 10 },
+              "unit": "none"
+            }
+          }
+        },
+        {
+          "title": "Conexoes Ativas com o Banco (HikariCP)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "hikaricp_connections_active",
+              "legendFormat": "{{ job }} - ativas"
+            },
+            {
+              "expr": "hikaricp_connections_idle",
+              "legendFormat": "{{ job }} - idle"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "fillOpacity": 15 },
+              "unit": "none"
+            }
+          }
+        },
+        {
+          "title": "Resilience4j - Chamadas com Sucesso vs Falha",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(resilience4j_circuitbreaker_calls_seconds_count{kind=\"successful\"}[5m])) by (name)",
+              "legendFormat": "{{ name }} - sucesso"
+            },
+            {
+              "expr": "sum(rate(resilience4j_circuitbreaker_calls_seconds_count{kind=\"failed\"}[5m])) by (name)",
+              "legendFormat": "{{ name }} - falha"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "fillOpacity": 20 },
+              "unit": "reqps"
+            }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["escola", "microsservicos", "spring-boot"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Sistema Escolar - Visao Geral",
+      "uid": "escola-overview",
+      "version": 1
+    }
