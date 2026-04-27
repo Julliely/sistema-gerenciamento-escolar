@@ -1,0 +1,107 @@
+##############################################
+# Deployment - Cadastro Service
+##############################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cadastro-service
+  namespace: escola-system
+  labels:
+    app: cadastro-service
+    app.kubernetes.io/part-of: sistema-escolar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cadastro-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: cadastro-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+        - name: cadastro-service
+          image: escola/cadastro-service:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: escola-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Readiness: Kubernetes so envia trafego quando o servico esta pronto
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Liveness: reinicia o pod se o servico travar
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Startup: da tempo para o Spring Boot inicializar
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 20
+
+---
+
+##############################################
+# Service - Cadastro Service (ClusterIP)
+##############################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: cadastro-svc
+  namespace: escola-system
+  labels:
+    app: cadastro-service
+    app.kubernetes.io/part-of: sistema-escolar
+spec:
+  type: ClusterIP
+  selector:
+    app: cadastro-service
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+      name: http

@@ -1,0 +1,132 @@
+##############################################
+# ConfigMap - Nginx config para o Frontend
+##############################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-nginx-config
+  namespace: escola-system
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: sistema-escolar
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # Servir arquivos estaticos
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        # Proxy reverso para o API Gateway
+        location /api/ {
+            proxy_pass http://gateway-svc:8080/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Health check do Nginx
+        location /healthz {
+            access_log off;
+            return 200 "ok";
+            add_header Content-Type text/plain;
+        }
+
+        # Cache para assets estaticos
+        location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg)$ {
+            expires 7d;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+---
+
+##############################################
+# Deployment - Frontend (Nginx)
+##############################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: escola-system
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: sistema-escolar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: escola/frontend:latest
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: frontend-nginx-config
+
+---
+
+##############################################
+# Service - Frontend (ClusterIP)
+##############################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-svc
+  namespace: escola-system
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: sistema-escolar
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http

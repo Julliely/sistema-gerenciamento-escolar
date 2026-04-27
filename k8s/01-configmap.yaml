@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: escola-config
+  namespace: escola-system
+  labels:
+    app.kubernetes.io/part-of: sistema-escolar
+data:
+  POSTGRES_HOST: "postgresql-svc"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "escola_db"
+  CADASTRO_SERVICE_URL: "http://cadastro-svc:8081"
+  DISCIPLINA_SERVICE_URL: "http://disciplina-svc:8083"
+  MATRICULA_SERVICE_URL: "http://matricula-svc:8082"
+  GATEWAY_SERVICE_URL: "http://gateway-svc:8080"

@@ -1,0 +1,66 @@
+##############################################
+# Ingress - Ponto de entrada unico do sistema
+##############################################
+# Pre-requisito: instalar Nginx Ingress Controller no cluster
+# kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml
+##############################################
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: escola-ingress
+  namespace: escola-system
+  labels:
+    app.kubernetes.io/part-of: sistema-escolar
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Rate limiting: max 100 requests por segundo por IP
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    # Tamanho maximo do body (upload de arquivos)
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    # NOTA: Para TLS, adicionar cert-manager annotations:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  # NOTA: Descomentar para habilitar TLS em producao
+  # tls:
+  #   - hosts:
+  #       - escola.exemplo.com
+  #     secretName: escola-tls
+  rules:
+    - host: escola.local
+      http:
+        paths:
+          # Frontend - rota principal
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-svc
+                port:
+                  number: 80
+          # API Gateway - todas as rotas /api/*
+          - path: /cadastro
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-svc
+                port:
+                  number: 8080
+          - path: /disciplina
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-svc
+                port:
+                  number: 8080
+          - path: /matricula
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-svc
+                port:
+                  number: 8080

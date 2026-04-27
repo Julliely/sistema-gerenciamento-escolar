@@ -1,0 +1,104 @@
+##############################################
+# Deployment - Gateway Service (API Gateway)
+##############################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-service
+  namespace: escola-system
+  labels:
+    app: gateway-service
+    app.kubernetes.io/part-of: sistema-escolar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gateway-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: gateway-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+        - name: gateway-service
+          image: escola/gateway-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: CADASTRO_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: escola-config
+                  key: CADASTRO_SERVICE_URL
+            - name: MATRICULA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: escola-config
+                  key: MATRICULA_SERVICE_URL
+            - name: DISCIPLINA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: escola-config
+                  key: DISCIPLINA_SERVICE_URL
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 20
+
+---
+
+##############################################
+# Service - Gateway Service (ClusterIP)
+##############################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-svc
+  namespace: escola-system
+  labels:
+    app: gateway-service
+    app.kubernetes.io/part-of: sistema-escolar
+spec:
+  type: ClusterIP
+  selector:
+    app: gateway-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
