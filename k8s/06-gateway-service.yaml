@@ -10,7 +10,7 @@ metadata:
     app: gateway-service
     app.kubernetes.io/part-of: sistema-escolar
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: gateway-service
@@ -23,17 +23,25 @@ spec:
     metadata:
       labels:
         app: gateway-service
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
-        prometheus.io/path: "/actuator/prometheus"
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: gateway-service
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: gateway-service
           image: escola/gateway-service:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xmx160m -Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
             - name: CADASTRO_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
@@ -51,11 +59,11 @@ spec:
                   key: DISCIPLINA_SERVICE_URL
           resources:
             requests:
-              cpu: 250m
-              memory: 384Mi
+              cpu: 100m
+              memory: 192Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 320Mi
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

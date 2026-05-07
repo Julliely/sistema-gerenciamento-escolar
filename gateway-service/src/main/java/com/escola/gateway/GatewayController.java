@@ -64,7 +64,16 @@ public class GatewayController {
         HttpEntity<String> entity = new HttpEntity<>(body, headers);
 
         try {
-            return restTemplate.exchange(uri, method, entity, String.class);
+            ResponseEntity<String> upstream = restTemplate.exchange(uri, method, entity, String.class);
+            // So devolvemos status, content-type e body — Transfer-Encoding e Content-Length sao
+            // recriados pelo Tomcat. Repassar o header original duplica e o ingress retorna 502.
+            HttpHeaders cleanHeaders = new HttpHeaders();
+            if (upstream.getHeaders().getContentType() != null) {
+                cleanHeaders.setContentType(upstream.getHeaders().getContentType());
+            } else {
+                cleanHeaders.setContentType(MediaType.APPLICATION_JSON);
+            }
+            return new ResponseEntity<>(upstream.getBody(), cleanHeaders, upstream.getStatusCode());
         } catch (HttpClientErrorException | HttpServerErrorException e) {
             return ResponseEntity.status(e.getStatusCode())
                     .contentType(MediaType.APPLICATION_JSON)

@@ -1,0 +1,17 @@
+# Build artifacts
+**/target/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# Logs e cache
+*.log
+.DS_Store
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar

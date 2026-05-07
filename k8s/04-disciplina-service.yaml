@@ -10,7 +10,7 @@ metadata:
     app: disciplina-service
     app.kubernetes.io/part-of: sistema-escolar
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: disciplina-service
@@ -23,17 +23,25 @@ spec:
     metadata:
       labels:
         app: disciplina-service
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8083"
-        prometheus.io/path: "/actuator/prometheus"
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: disciplina-service
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: disciplina-service
           image: escola/disciplina-service:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8083
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xmx160m -Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
             - name: POSTGRES_HOST
               valueFrom:
                 configMapKeyRef:
@@ -56,11 +64,11 @@ spec:
                   key: CADASTRO_SERVICE_URL
           resources:
             requests:
-              cpu: 250m
-              memory: 384Mi
+              cpu: 100m
+              memory: 192Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 320Mi
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

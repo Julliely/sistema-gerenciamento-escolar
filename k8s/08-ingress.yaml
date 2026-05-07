@@ -12,24 +12,12 @@ metadata:
   labels:
     app.kubernetes.io/part-of: sistema-escolar
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    # Rate limiting: max 100 requests por segundo por IP
-    nginx.ingress.kubernetes.io/limit-rps: "100"
-    # Tamanho maximo do body (upload de arquivos)
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-    # Timeouts
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
-    # NOTA: Para TLS, adicionar cert-manager annotations:
-    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Timeouts maiores: a JVM tem warm-up lento na primeira requisicao
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
 spec:
   ingressClassName: nginx
-  # NOTA: Descomentar para habilitar TLS em producao
-  # tls:
-  #   - hosts:
-  #       - escola.exemplo.com
-  #     secretName: escola-tls
   rules:
     - host: escola.local
       http:

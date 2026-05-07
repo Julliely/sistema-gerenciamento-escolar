@@ -3,349 +3,245 @@ Julliely de Sousa, Fernanda Ribeiro e João Marcelo Pereira
 
 # Sistema de Gerenciamento Escolar
 
-Este projeto é uma atividade acadêmica desenvolvida com o objetivo de compreender e aplicar os princípios fundamentais da **Arquitetura de Microsserviços**. O sistema simula o fluxo de uma instituição de ensino, abrangendo desde o cadastro base até a lógica de matrículas e validação de pré-requisitos.
+Trabalho acadêmico que aplica os fundamentos de **Arquitetura de Microsserviços** e **Sistemas Distribuídos**. O sistema simula uma instituição de ensino com cadastro de alunos/professores, disciplinas e matrículas. Roda como um cluster Kubernetes distribuído em **3 máquinas**, com **tratamento de falhas** entre os serviços usando Circuit Breaker.
 
-## Arquitetura Geral
+## Arquitetura
 
-O sistema é composto por **4 microsserviços Java (Spring Boot)**, um **frontend estático (Nginx)** e um **banco de dados PostgreSQL**, todos orquestrados via **Docker Compose** para desenvolvimento local e com **manifests Kubernetes** para deploy em cluster.
+O sistema é composto por **4 microsserviços Java (Spring Boot)**, um **frontend (Nginx)** e um **PostgreSQL**, todos rodando num cluster Kubernetes de 3 nodes.
 
 ```
-                         [ Internet / Ingress Controller ]
-                                      |
-                     +----------------+----------------+
-                     |                                 |
-              [ Frontend (Nginx) ]           [ API Gateway (8080) ]
-                                                  |
-                          +-----------------------+-----------------------+
-                          |                       |                       |
-                 [ Cadastro Service ]    [ Disciplina Service ]   [ Matricula Service ]
-                     (8081)                   (8083)                   (8082)
-                          |                       |                       |
-                          +-----------+-----------+-----------+-----------+
-                                      |
-                             [ PostgreSQL 15 ]
-                                 (5432)
-
-       [ Prometheus (9090) ] ----scrape----> [ Todos os servicos /actuator/prometheus ]
-              |
-       [ Grafana (3000) ] --- dashboards com metricas e alertas
+                  [ Cliente / Navegador ]
+                          |
+                  http://escola.local
+                          |
+                 [ Nginx Ingress Controller ]
+                          |
+        +-----------------+-----------------+
+        |                                   |
+  [ Frontend (Nginx) ]               [ API Gateway ]
+                                          (8080)
+                                            |
+              +-----------------------------+-----------------------------+
+              |                             |                             |
+    [ Cadastro Service ]         [ Disciplina Service ]         [ Matricula Service ]
+          (8081)                       (8083)                         (8082)
+              |                             |                             |
+              +-----------------------------+-----------------------------+
+                                            |
+                                  [ PostgreSQL 15 ]
+                                       (5432)
 ```
+
+### Distribuição nas 3 máquinas (nodes do K8s)
+
+Cada microsserviço tem **3 réplicas**, e o Kubernetes (via `podAntiAffinity`) procura colocar cada réplica num node diferente. Resultado típico:
+
+```
++-------------------+   +-------------------+   +-------------------+
+|     node-1        |   |     node-2        |   |     node-3        |
++-------------------+   +-------------------+   +-------------------+
+| frontend          |   | frontend          |   | frontend          |
+| gateway           |   | gateway           |   | gateway           |
+| cadastro          |   | cadastro          |   | cadastro          |
+| disciplina        |   | disciplina        |   | disciplina        |
+| matricula         |   | matricula         |   | matricula         |
+| postgresql ★      |   |                   |   |                   |
++-------------------+   +-------------------+   +-------------------+
+```
+
+> O PostgreSQL é um StatefulSet com 1 réplica (volume persistente). Se um node cair, os serviços continuam funcionando nos outros dois — esse é o ganho de rodar distribuído.
 
 ### Divisão de Responsabilidades
 
 | Serviço | Porta | Responsabilidade |
 |---|---|---|
 | **Cadastro Service** | 8081 | Gestão de alunos e professores |
-| **Disciplina Service** | 8083 | Grade curricular, períodos e validação de professores |
-| **Matrícula Service** | 8082 | Enturmação, verificação de alunos e disciplinas |
-| **Gateway Service** | 8080 | Roteamento centralizado, CORS e Circuit Breaker |
-| **Frontend** | 5500 (Docker) / 80 (K8s) | Interface web |
+| **Disciplina Service** | 8083 | Disciplinas e períodos |
+| **Matrícula Service** | 8082 | Matrículas (chama Cadastro e Disciplina) |
+| **Gateway Service** | 8080 | Roteamento e Circuit Breaker |
+| **Frontend** | 80 | Interface web (Nginx) |
+| **PostgreSQL** | 5432 | Banco de dados |
 
-## Tecnologias Utilizadas
+## Tratamento de Erros (Resilience4j)
 
-### Backend
-- Java 21, Spring Boot 3.5.13, Spring Data JPA, Hibernate
-- Spring Actuator (health checks, métricas)
-- Resilience4j (Circuit Breaker, Retry, Fallback)
-- Micrometer + Prometheus Registry (métricas)
+O grande desafio de um sistema distribuído é o que fazer quando **um serviço chama outro e o outro está fora do ar ou lento**. A solução implementada combina três padrões da biblioteca **Resilience4j**:
 
-### Frontend
-- HTML5, CSS3, JavaScript (Vanilla JS)
-- Fetch API com padrão Service Pattern
+### 1. Retry — tenta de novo
 
-### Banco de Dados
-- PostgreSQL 15
+Quando uma chamada falha (timeout, conexão recusada), o serviço espera um pouco e tenta novamente, até 3 vezes, com **backoff exponencial** (1s, 2s, 4s). Falhas transitórias (um pod reiniciando, rede instável) se resolvem sozinhas.
 
-### Infraestrutura
-- Docker & Docker Compose (desenvolvimento local)
-- Kubernetes (produção) — manifests completos em `k8s/`
-- Nginx Ingress Controller
-- Prometheus + Grafana (observabilidade)
+### 2. Circuit Breaker — para de bater na porta fechada
 
-### CI/CD
-- GitHub Actions (build, test, Docker push para GHCR)
-- kubeconform (validação de manifests K8s)
+Se as falhas continuam, abrir conexões repetidas só piora o problema. O Circuit Breaker observa as últimas 10 chamadas e:
 
-## Executando com Docker Compose
-
-### Pré-requisitos
-- Docker e Docker Compose instalados
-
-### Passos
-```bash
-docker compose up --build
+```
+   FECHADO  ─── 50% de falhas ───►  ABERTO  ─── 30s ───►  MEIO-ABERTO
+       ▲                                                       │
+       └──────────────── tudo ok ──────────────────────────────┘
 ```
 
-Aguarde os serviços subirem e acesse:
-- **Frontend**: http://localhost:5500
-- **API Gateway**: http://localhost:8080
+- **FECHADO**: tudo normal, requisições passam.
+- **ABERTO**: serviço-alvo está quebrado. Requisições falham na hora (sem tentar) e o **fallback** entra.
+- **MEIO-ABERTO**: depois de 30s, deixa passar 3 chamadas de teste. Se funcionarem, volta a fechar.
 
-### Populando o Banco
-Os dados são populados automaticamente via scripts SQL executados no container PostgreSQL.
+### 3. Fallback — resposta de emergência
 
-## Deploy no Kubernetes
+Quando o circuito está aberto ou todas as tentativas falharam, o serviço retorna uma resposta padrão (ex: "503 — serviço temporariamente indisponível", lista vazia, valor cacheado) em vez de quebrar a requisição inteira. Evita falhas em cascata.
+
+### Onde está configurado
+
+| Quem chama | Quem é chamado | Circuit Breaker |
+|---|---|---|
+| disciplina-service | cadastro-service | `cadastroService` |
+| matricula-service | cadastro-service | `cadastroService` |
+| matricula-service | disciplina-service | `disciplinaService` |
+| gateway-service | cadastro-service | `cadastroRoute` |
+| gateway-service | matricula-service | `matriculaRoute` |
+| gateway-service | disciplina-service | `disciplinaRoute` |
+
+Configuração nos arquivos `application.properties` de cada serviço. Estado visível em:
+
+```bash
+kubectl exec -n escola-system deploy/gateway-service -- curl -s localhost:8080/actuator/health
+```
+
+### Health Checks (Kubernetes)
+
+Cada pod expõe três endpoints que o K8s usa para tomar decisões:
+
+| Endpoint | Para que serve |
+|---|---|
+| `/actuator/health/startup` | "Já terminei de subir?" — K8s só começa a testar liveness/readiness depois disso |
+| `/actuator/health/readiness` | "Estou pronto para receber tráfego?" — se NÃO, o Service para de mandar requisições |
+| `/actuator/health/liveness` | "Ainda estou vivo?" — se NÃO, o K8s reinicia o pod automaticamente |
+
+Combinado com `replicas: 3` e anti-affinity, isso garante que **uma falha individual nunca derruba o sistema**.
+
+## Como rodar
 
 ### Pré-requisitos
-- Cluster Kubernetes (minikube, kind, ou cloud)
+- Cluster Kubernetes com **3 nodes** (pode ser kind, k3s, minikube com 3 nodes ou cloud)
 - `kubectl` configurado
-- Nginx Ingress Controller instalado
+- Nginx Ingress Controller instalado no cluster
+- Imagens Docker dos serviços construídas e disponíveis no cluster
 
-### Deploy do Sistema
+### Construir as imagens
+
+Em cada serviço:
+```bash
+cd cadastro-service && mvn clean package && docker build -t escola/cadastro-service:latest .
+cd disciplina-service && mvn clean package && docker build -t escola/disciplina-service:latest .
+cd matricula-service && mvn clean package && docker build -t escola/matricula-service:latest .
+cd gateway-service && mvn clean package && docker build -t escola/gateway-service:latest .
+cd frontend && docker build -t escola/frontend:latest .
+```
+
+### Deploy
 ```bash
 cd k8s
 chmod +x deploy.sh
 ./deploy.sh apply
 ```
 
-### Deploy da Observabilidade
-```bash
-cd k8s/monitoring
-chmod +x deploy.sh
-./deploy.sh apply
-```
-
-### Configurar /etc/hosts
+### Acessar
+Adicione ao `/etc/hosts` (ou `C:\Windows\System32\drivers\etc\hosts` no Windows):
 ```
 127.0.0.1 escola.local
-127.0.0.1 grafana.escola.local
-127.0.0.1 prometheus.escola.local
 ```
 
-### Acessar
-- **Sistema**: http://escola.local
-- **Grafana**: http://grafana.escola.local (admin / admin123)
-- **Prometheus**: http://prometheus.escola.local
+Acesse: **http://escola.local**
+
+### Verificar a distribuição nos 3 nodes
+```bash
+kubectl get pods -n escola-system -o wide
+```
+
+A coluna `NODE` mostra em qual máquina cada pod está rodando.
 
 ### Remover
 ```bash
-cd k8s/monitoring && ./deploy.sh delete
-cd k8s && ./deploy.sh delete
+cd k8s
+./deploy.sh delete
 ```
 
-## Resiliência (Resilience4j)
+## Componentes Kubernetes (resumo)
 
-Os microsserviços utilizam **Circuit Breaker** e **Retry** para evitar falhas em cascata:
-
-```
-1. Request chega ao servico
-2. Servico tenta chamar outro servico (ex: matricula -> cadastro)
-3. Se falhar → Retry (ate 3x com backoff exponencial)
-4. Se continuar falhando → Circuit Breaker registra falha
-5. Apos 50% de falha em 10 chamadas → Circuito ABRE
-6. Proximas chamadas → Fallback imediato (sem tentar chamar)
-7. Apos 30s → HALF-OPEN (testa 3 chamadas)
-8. Se funcionar → Circuito FECHA (volta ao normal)
-```
-
-### Circuit Breakers configurados
-
-| Serviço | Circuit Breaker | Protege contra |
+| Recurso | Quantidade | Função |
 |---|---|---|
-| disciplina-service | `cadastroService` | cadastro-service fora do ar |
-| matricula-service | `cadastroService` | cadastro-service fora do ar |
-| matricula-service | `disciplinaService` | disciplina-service fora do ar |
-| gateway-service | `cadastroRoute` | cadastro-service fora do ar |
-| gateway-service | `matriculaRoute` | matricula-service fora do ar |
-| gateway-service | `disciplinaRoute` | disciplina-service fora do ar |
+| Namespace | 1 (escola-system) | Isolamento lógico |
+| ConfigMap | 1 | URLs internas dos serviços |
+| Secret | 1 | Credenciais do PostgreSQL |
+| StatefulSet | 1 (postgresql) | Banco com volume persistente |
+| Deployment | 5 (3 réplicas cada) | 4 microsserviços + frontend |
+| Service (ClusterIP) | 6 | DNS interno entre os pods |
+| Ingress | 1 | Ponto de entrada externo |
 
-O estado dos circuit breakers é visível em:
-- `/actuator/health` (health indicator)
-- Grafana dashboard (painel "Circuit Breaker - Estado")
+## Endpoints da API (via Gateway em http://escola.local)
 
-## Observabilidade
+### Cadastro
+- `GET/POST /cadastro/alunos`
+- `PUT/DELETE /cadastro/alunos/{id}`
+- `GET/POST /cadastro/professores`
+- `PUT/DELETE /cadastro/professores/{id}`
 
-### Health Checks (Spring Actuator)
+### Disciplina
+- `GET/POST /disciplina/disciplinas`
+- `PUT/DELETE /disciplina/disciplinas/{id}`
+- `GET/POST /disciplina/periodos`
 
-Cada microsserviço expõe:
+### Matrícula
+- `GET/POST /matricula/matriculas`
+- `GET /matricula/matriculas/aluno/{alunoId}`
+- `PATCH /matricula/matriculas/{id}/status`
+- `DELETE /matricula/matriculas/{id}`
 
-| Endpoint | Função |
-|---|---|
-| `/actuator/health` | Status geral do serviço |
-| `/actuator/health/readiness` | Pronto para receber tráfego? |
-| `/actuator/health/liveness` | Processo está vivo? |
-| `/actuator/prometheus` | Métricas no formato Prometheus |
-| `/actuator/info` | Informações do serviço |
+## Tecnologias
 
-### Prometheus
-
-Coleta métricas de todos os serviços a cada 10-15 segundos. Alertas configurados:
-
-| Alerta | Condição | Severidade |
-|---|---|---|
-| ServicoIndisponivel | Serviço fora do ar >1min | critical |
-| MemoriaJVMAlta | Heap >80% por >5min | warning |
-| TaxaErro5xxAlta | >5% de 5xx por >2min | warning |
-| CircuitBreakerAberto | Circuit breaker OPEN >30s | critical |
-| LatenciaAlta | P95 >2s por >3min | warning |
-
-### Grafana (Dashboard pré-configurado)
-
-O dashboard "Sistema Escolar - Visão Geral" inclui 10 painéis:
-
-| Painel | Métrica |
-|---|---|
-| Serviços Online | Contador de serviços UP |
-| Status dos Serviços | Tabela UP/DOWN |
-| Requisições HTTP/s | Taxa de requests por serviço |
-| Latência P95 | Percentil 95 por serviço |
-| Erros 4xx e 5xx | Taxa de erros |
-| Circuit Breaker Estado | CLOSED / OPEN / HALF-OPEN |
-| JVM Heap Memory | Uso de memória da JVM |
-| JVM Threads | Threads ativas |
-| Conexões HikariCP | Conexões ativas/idle com o banco |
-| Resilience4j Sucesso/Falha | Chamadas com sucesso vs falha |
-
-## CI/CD (GitHub Actions)
-
-### Pipeline CI (`ci.yml`) — a cada push/PR
-
-```
-Push/PR para main
-    |
-    +-- [build-and-test] 4 jobs em paralelo (mvn clean verify)
-    +-- [validate-k8s]   kubeconform valida manifests YAML
-    +-- [ci-summary]     verifica se tudo passou
-```
-
-### Pipeline CD (`cd.yml`) — a cada tag v* ou manual
-
-```
-Tag v1.0.0
-    |
-    +-- [build-and-push] 5 imagens Docker em paralelo → ghcr.io
-    +-- [cd-summary]     lista imagens publicadas
-```
-
-Para publicar imagens:
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-## Endpoints da API (via Gateway)
-
-Todos os endpoints são acessados através do gateway em `http://localhost:8080`:
-
-### Cadastro Service
-- `GET /cadastro/alunos` — Listar alunos
-- `POST /cadastro/alunos` — Cadastrar aluno
-- `PUT /cadastro/alunos/{id}` — Atualizar aluno
-- `DELETE /cadastro/alunos/{id}` — Deletar aluno
-- `GET /cadastro/professores` — Listar professores
-- `POST /cadastro/professores` — Cadastrar professor
-- `PUT /cadastro/professores/{id}` — Atualizar professor
-- `DELETE /cadastro/professores/{id}` — Deletar professor
-
-### Disciplina Service
-- `GET /disciplina/disciplinas` — Listar disciplinas
-- `POST /disciplina/disciplinas` — Cadastrar disciplina
-- `PUT /disciplina/disciplinas/{id}` — Atualizar disciplina
-- `DELETE /disciplina/disciplinas/{id}` — Deletar disciplina
-- `GET /disciplina/periodos` — Listar períodos
-- `POST /disciplina/periodos` — Cadastrar período
-
-### Matrícula Service
-- `GET /matricula/matriculas` — Listar matrículas
-- `POST /matricula/matriculas` — Realizar matrícula
-- `GET /matricula/matriculas/aluno/{alunoId}` — Matrículas por aluno
-- `PATCH /matricula/matriculas/{id}/status` — Atualizar status
-- `DELETE /matricula/matriculas/{id}` — Cancelar matrícula
-- `POST /matricula/matriculas/finalizar-semestre` — Finalizar semestre
-
-## Componentes Kubernetes
-
-### Namespace `escola-system`
-
-| Recurso | Nome | Função |
-|---|---|---|
-| Namespace | escola-system | Isolamento lógico |
-| ConfigMap | escola-config | URLs dos serviços |
-| Secret | db-credentials | Credenciais do PostgreSQL |
-| StatefulSet | postgresql | Banco de dados com PVC |
-| Deployment (2 réplicas) | cadastro-service | Microsserviço de cadastro |
-| Deployment (2 réplicas) | disciplina-service | Microsserviço de disciplinas |
-| Deployment (2 réplicas) | matricula-service | Microsserviço de matrículas |
-| Deployment (2 réplicas) | gateway-service | API Gateway |
-| Deployment (2 réplicas) | frontend | Nginx com proxy reverso |
-| Ingress | escola-ingress | Entrada única + rate limiting |
-| HPA | cadastro/matricula/gateway-hpa | Autoscaling por CPU/memória |
-| PDB | *-pdb | Garante mín 1 pod por serviço |
-| NetworkPolicy | 7 policies | Controle de tráfego (least privilege) |
-
-### Namespace `monitoring`
-
-| Recurso | Nome | Função |
-|---|---|---|
-| Deployment | prometheus | Coleta de métricas |
-| Deployment | grafana | Dashboards |
-| Ingress | monitoring-ingress | Acesso externo |
-
-## Estratégia de Persistência
-
-> **Nota:** Por se tratar de um trabalho acadêmico, este projeto utiliza um **banco de dados único** compartilhado por todos os microsserviços. A camada de aplicação foi escrita respeitando a separação lógica de dados, facilitando uma futura migração para bancos independentes.
+- **Java 21**, Spring Boot 3.5
+- **Resilience4j** (Circuit Breaker, Retry, Fallback)
+- **Spring Actuator** (health checks)
+- **PostgreSQL 15**
+- **Docker** + **Kubernetes** (3 nodes)
+- **Nginx** (frontend + ingress)
+- HTML/CSS/JavaScript (frontend)
 
 ## Estrutura do Projeto
 
 ```
 sistema-de-gerenciamento-escolar/
-├── cadastro-service/              # Microsserviço de cadastro (Java/Spring Boot)
-├── disciplina-service/            # Microsserviço de disciplinas
-├── matricula-service/             # Microsserviço de matrículas
-├── gateway-service/               # API Gateway
-├── frontend/                      # Interface web (HTML/CSS/JS)
-│   ├── pages/                     # Páginas por domínio
-│   ├── js/services/               # Camada de comunicação com API
-│   └── js/config.js               # Configurações
-├── k8s/                           # Manifests Kubernetes
-│   ├── 00-namespace.yaml          # Namespace escola-system
-│   ├── 01-configmap.yaml          # ConfigMap com URLs dos serviços
-│   ├── 01-secrets.yaml            # Secret com credenciais do banco
-│   ├── 02-postgresql.yaml         # StatefulSet + PVC + Service do PostgreSQL
-│   ├── 03-cadastro-service.yaml   # Deployment + Service (2 réplicas)
-│   ├── 04-disciplina-service.yaml # Deployment + Service (2 réplicas)
-│   ├── 05-matricula-service.yaml  # Deployment + Service (2 réplicas)
-│   ├── 06-gateway-service.yaml    # Deployment + Service (2 réplicas)
-│   ├── 07-frontend.yaml           # Deployment + Nginx ConfigMap + Service
-│   ├── 08-ingress.yaml            # Ingress com rate limiting
-│   ├── 09-hpa.yaml                # HorizontalPodAutoscaler
-│   ├── 10-pdb.yaml                # PodDisruptionBudgets
-│   ├── 11-network-policies.yaml   # NetworkPolicies (least privilege)
-│   ├── deploy.sh                  # Script de deploy/delete
-│   └── monitoring/                # Stack de observabilidade
-│       ├── 00-namespace.yaml
-│       ├── 01-prometheus-config.yaml  # Scrape configs + alertas
-│       ├── 02-prometheus.yaml         # Deployment + RBAC + PVC
-│       ├── 03-grafana-config.yaml     # Datasource + dashboard JSON
-│       ├── 04-grafana.yaml            # Deployment + PVC
-│       ├── 05-ingress.yaml            # Ingress para Grafana/Prometheus
-│       └── deploy.sh
-├── .github/workflows/
-│   ├── ci.yml                     # CI: build, test, validação K8s
-│   └── cd.yml                     # CD: build e push de imagens Docker
-├── docker-compose.yml             # Orquestração local
-├── 01_reset_database.sql          # Script de reset do banco
-├── 02_populate_database.sql       # Script de população
-└── README.md
+├── cadastro-service/         # Microsservico Java (porta 8081)
+├── disciplina-service/       # Microsservico Java (porta 8083)
+├── matricula-service/        # Microsservico Java (porta 8082)
+├── gateway-service/          # API Gateway (porta 8080)
+├── frontend/                 # Interface web (Nginx)
+├── k8s/
+│   ├── 00-namespace.yaml
+│   ├── 01-configmap.yaml
+│   ├── 01-secrets.yaml
+│   ├── 02-postgresql.yaml          # StatefulSet + PVC
+│   ├── 03-cadastro-service.yaml    # Deployment + Service (3 replicas + anti-affinity)
+│   ├── 04-disciplina-service.yaml  # idem
+│   ├── 05-matricula-service.yaml   # idem
+│   ├── 06-gateway-service.yaml     # idem
+│   ├── 07-frontend.yaml            # idem
+│   ├── 08-ingress.yaml             # Roteamento HTTP externo
+│   └── deploy.sh                   # Script de apply/delete
+├── docker-compose.yml        # Para testar localmente sem K8s
+├── 01_reset_database.sql
+└── 02_populate_database.sql
 ```
 
-## Desenvolvimento Local (sem Docker)
+## Desenvolvimento Local (sem Kubernetes)
 
-### Pré-requisitos
-- Java 21
-- Maven
-- PostgreSQL
+Se quiser testar a aplicação na sua máquina antes de subir no cluster:
 
-### Passos
-1. Criar banco `escola_db` no PostgreSQL
-2. Executar scripts SQL (`01_reset_database.sql` e `02_populate_database.sql`)
-3. Iniciar serviços em terminais separados:
-   ```bash
-   cd cadastro-service && mvn spring-boot:run
-   cd disciplina-service && mvn spring-boot:run
-   cd matricula-service && mvn spring-boot:run
-   cd gateway-service && mvn spring-boot:run
-   ```
-4. Abrir `frontend/index.html` com Live Server no VS Code
+```bash
+docker compose up --build
+```
+
+- Frontend: http://localhost:5500
+- Gateway: http://localhost:8080
 
 ---
-*Este projeto é um componente prático para a disciplina de Arquitetura de Software, demonstrando princípios de microsserviços, Kubernetes, observabilidade e CI/CD.*
+
+*Componente prático da disciplina de Arquitetura de Software — demonstra microsserviços, sistemas distribuídos com Kubernetes e tratamento de falhas com Resilience4j.*

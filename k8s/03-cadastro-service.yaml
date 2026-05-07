@@ -10,7 +10,7 @@ metadata:
     app: cadastro-service
     app.kubernetes.io/part-of: sistema-escolar
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: cadastro-service
@@ -23,17 +23,26 @@ spec:
     metadata:
       labels:
         app: cadastro-service
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8081"
-        prometheus.io/path: "/actuator/prometheus"
     spec:
+      # Espalha as replicas entre os 3 nodes (1 replica por maquina)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: cadastro-service
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: cadastro-service
           image: escola/cadastro-service:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xmx160m -Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
             - name: POSTGRES_HOST
               valueFrom:
                 configMapKeyRef:
@@ -51,11 +60,11 @@ spec:
                   key: POSTGRES_PASSWORD
           resources:
             requests:
-              cpu: 250m
-              memory: 384Mi
+              cpu: 100m
+              memory: 192Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 320Mi
           # Readiness: Kubernetes so envia trafego quando o servico esta pronto
           readinessProbe:
             httpGet:
