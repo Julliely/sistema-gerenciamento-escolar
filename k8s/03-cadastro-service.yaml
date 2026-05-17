@@ -36,8 +36,8 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: cadastro-service
-          image: escola/cadastro-service:latest
-          imagePullPolicy: IfNotPresent
+          image: nanda/cadastro-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8081
           env:

@@ -60,7 +60,7 @@ metadata:
     app: frontend
     app.kubernetes.io/part-of: sistema-escolar
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: frontend
@@ -85,8 +85,8 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: frontend
-          image: escola/frontend:latest
-          imagePullPolicy: IfNotPresent
+          image: nanda/frontend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
           volumeMounts:
